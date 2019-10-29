@@ -4,29 +4,23 @@ import java.net.Socket;
 import java.util.Scanner;
 
 public class Client implements Runnable {
-    String sendMsg; // msg to be sent to the echo server
-    String threadLabel; // label for the thread
-
     ObjectOutputStream outToServer;
     ObjectInputStream inFromServer;
 
     Socket clientSocket;
-    Scanner inputReader;
 
-    public Client (String msg, String tlabel){
-        this.sendMsg = msg;
-        this.threadLabel = tlabel;
-        inputReader = new Scanner(System.in);
+    public Client() {
         try {
             clientSocket = new Socket(InetAddress.getByName(ServerConstants.IP), ServerConstants.PORT);
             outToServer = new ObjectOutputStream(clientSocket.getOutputStream());
             inFromServer = new ObjectInputStream(clientSocket.getInputStream());
-        }catch (Exception e) {}
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
-    public static void main(String[] args) throws Exception {
-        String sentence = new String();
-        Thread thread = new Thread(new Client(sentence,"client-"));
+    public static void main(String[] args) {
+        Thread thread = new Thread(new Client());
         thread.start();
     }
 
@@ -44,11 +38,9 @@ public class Client implements Runnable {
 
     private Message waitForBoardSetupInstructions() {
         try {
-            Message turnInformationMessage = new Message();
+            Message turnInformationMessage = (Message) inFromServer.readObject();
 
-            turnInformationMessage = (Message) inFromServer.readObject();
-
-            if(!turnInformationMessage.isYourTurn()) {
+            if (!turnInformationMessage.isYourTurn()) {
                 System.out.println(turnInformationMessage.getMsg());
 
                 turnInformationMessage = (Message) inFromServer.readObject();
@@ -56,43 +48,41 @@ public class Client implements Runnable {
 
             return turnInformationMessage;
 
-        }catch (Exception e) {}
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
         return null;
     }
 
     private void setupBoard(Message setupInstructions) {
-        String coordinate;
-
         try {
             while (setupInstructions.isYourTurn()) {
                 System.out.println(setupInstructions.getMsg());
 
-                coordinate = inputReader.next();
-
-                outToServer.writeObject(coordinate);
-                outToServer.flush();
+                sendInputToServer();
 
                 setupInstructions = (Message) inFromServer.readObject();
             }
-        }catch (Exception e) {}
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private void enterBattleStage() {
-        String move;
         try {
             Message moveInstruction = (Message) inFromServer.readObject();
 
-            while(moveInstruction.gameIsStillActive()) {
-                if(!moveInstruction.isYourTurn()) {
+            while (moveInstruction.gameIsStillActive()) {
+                if (!moveInstruction.isYourTurn()) {
                     moveInstruction = (Message) inFromServer.readObject();
-                }else {
+                } else {
                     System.out.println(moveInstruction.getMsg());
-                    move = inputReader.next();
 
-                    outToServer.writeObject(move);
-                    outToServer.flush();
+                    sendInputToServer();
 
                     Message boardMessage = (Message) inFromServer.readObject();
+
                     System.out.println(boardMessage.Ftable.toString());
                     System.out.println(boardMessage.Ptable.toString());
 
@@ -101,41 +91,21 @@ public class Client implements Runnable {
             }
 
             System.out.println(moveInstruction.getMsg());
-        }catch (Exception e) {}
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void sendInputToServer() {
+        Scanner inputReader = new Scanner(System.in);
+
+        try {
+            String clientInput = inputReader.next();
+
+            outToServer.writeObject(clientInput);
+            outToServer.flush();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 }
-
-//    private String waitForTurn() {
-//        try {
-//            Message serverMessage = (Message) inFromServer.readObject();
-//            System.out.println(serverMessage.getMsgType());
-//
-//            if(serverMessage.getMsgType() == Message.MSG_BOARD_INFO) {
-//                System.out.println(serverMessage.Ftable.toString());
-//                System.out.println(serverMessage.Ptable.toString());
-//                System.out.println(serverMessage.getMsg());
-//                serverMessage = (Message) inFromServer.readObject();
-//            }
-//
-//            if(needToWait(serverMessage.getMsg())) {
-//                System.out.println(serverMessage.getMsg());
-//            }
-//
-//            while(needToWait(serverMessage.getMsg())) {
-//                serverMessage = (Message) inFromServer.readObject();
-//            }
-//
-//            return serverMessage.getMsg();
-//
-//        }catch (Exception e) {
-//
-//        }
-//
-//        System.out.println("Got to finally");
-//        return null;
-//    }
-//
-//    private boolean needToWait(String serverMessage) {
-//        return serverMessage.equals(ServerConstants.PLAYER_ONE_WAIT_MESSAGE) ||
-//                serverMessage.equals(ServerConstants.PLAYER_TWO_WAIT_MESSAGE);
-//    }

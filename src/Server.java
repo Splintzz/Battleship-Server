@@ -17,22 +17,26 @@ public class Server implements Runnable {
 
     private int numberOfConnections, numberOfHitsFromPlayerOne, numberOfHitsFromPlayerTwo;
 
-    private boolean playerOneTurn;
+    private boolean itIsPlayerOnesTurn;
 
     public static void main(String[] args) throws IOException {
-        Server battleshipServer = new Server();
+        ServerSocket serverSocket = new ServerSocket(ServerConstants.PORT);
 
-        battleshipServer.server = new ServerSocket(ServerConstants.PORT);
-        System.out.println("Server Booted");
+        while(true) {
+            Server battleshipServer = new Server();
 
-        Socket playerOne = battleshipServer.server.accept();
-        battleshipServer.addFirstPlayer(playerOne);
+            battleshipServer.server = serverSocket;
+            System.out.println(ServerConstants.SERVED_BOOTED_MESSAGE);
 
-        battleshipServer.gameThread = new Thread(battleshipServer);
-        battleshipServer.gameThread.start();
+            Socket playerOne = battleshipServer.server.accept();
+            battleshipServer.addFirstPlayer(playerOne);
 
-        Socket playerTwo = battleshipServer.server.accept();
-        battleshipServer.addSecondPlayer(playerTwo);
+            battleshipServer.gameThread = new Thread(battleshipServer);
+            battleshipServer.gameThread.start();
+
+            Socket playerTwo = battleshipServer.server.accept();
+            battleshipServer.addSecondPlayer(playerTwo);
+        }
     }
 
     public Server() {
@@ -45,73 +49,7 @@ public class Server implements Runnable {
         playerOnePTable = new BattleShipTable();
         playerTwoPTable = new BattleShipTable();
 
-        playerOneTurn = true;
-    }
-
-    @Override
-    public void run() {
-        waitForSecondPlayer();
-
-        setUpBoard(ServerConstants.PLAYER_ONE);
-        setUpBoard(ServerConstants.PLAYER_TWO);
-
-        while(theGameIsNotOver()) {
-            if (playerOneTurn) {
-                makeMove(ServerConstants.PLAYER_ONE);
-                sendBoards(ServerConstants.PLAYER_ONE);
-            } else {
-                makeMove(ServerConstants.PLAYER_TWO);
-                sendBoards(ServerConstants.PLAYER_TWO);
-            }
-            switchTurns();
-        }
-
-        sendWinningMessage();
-    }
-
-    private void sendWinningMessage() {
-        Message winningMessage = new Message("Player " + getWinner() + " has emerged victorious");
-        winningMessage.setGameIsStillActive(false);
-        winningMessage.setIsYourTurn(true);
-
-        try {
-            outToClientOne.writeObject(winningMessage);
-            outToClientTwo.writeObject(winningMessage);
-        }catch (Exception e) {}
-    }
-
-    private boolean theGameIsNotOver() {
-        return numberOfHitsFromPlayerOne != BattleShipTable.NUMBER_OF_HITS_POSSIBLE &&
-                numberOfHitsFromPlayerTwo != BattleShipTable.NUMBER_OF_HITS_POSSIBLE;
-    }
-
-    private int getWinner() {
-        int winner = (numberOfHitsFromPlayerOne == BattleShipTable.NUMBER_OF_HITS_POSSIBLE)
-                        ? ServerConstants.PLAYER_ONE : ServerConstants.PLAYER_TWO;
-
-        return winner;
-    }
-
-    private void sendBoards(int player) {
-        Message boardInfo = new Message();
-        boardInfo.setMsg(numberOfHitsFromPlayerOne + " " +numberOfHitsFromPlayerTwo);
-        boardInfo.setMsgType(Message.MSG_BOARD_INFO);
-
-        try {
-            if (player == ServerConstants.PLAYER_ONE) {
-                boardInfo.Ftable = new BattleShipTable(playerOneBoard.table);
-                boardInfo.Ptable = new BattleShipTable(playerOnePTable.table);
-
-                outToClientOne.writeObject(boardInfo);
-                outToClientOne.flush();
-            } else {
-                boardInfo.Ftable = new BattleShipTable(playerTwoBoard.table);
-                boardInfo.Ptable = new BattleShipTable(playerTwoPTable.table);
-
-                outToClientTwo.writeObject(boardInfo);
-                outToClientTwo.flush();
-            }
-        }catch (Exception e) {}
+        itIsPlayerOnesTurn = true;
     }
 
     private void addFirstPlayer(Socket firstPlayer) {
@@ -136,18 +74,38 @@ public class Server implements Runnable {
         }
     }
 
+    @Override
+    public void run() {
+        waitForTheSecondPlayer();
+
+        setUpBoard(ServerConstants.PLAYER_ONE);
+        setUpBoard(ServerConstants.PLAYER_TWO);
+
+        while(theGameIsNotOver()) {
+            if (itIsPlayerOnesTurn) {
+                makeMove(ServerConstants.PLAYER_ONE);
+                sendBoards(ServerConstants.PLAYER_ONE);
+            } else {
+                makeMove(ServerConstants.PLAYER_TWO);
+                sendBoards(ServerConstants.PLAYER_TWO);
+            }
+            switchTurns();
+        }
+        sendWinningMessage();
+    }
+
+    private void waitForTheSecondPlayer() {
+        while(twoPlayersHaveNotJoined()){
+            doNothing();
+        }
+    }
+
     private boolean twoPlayersHaveNotJoined() {
         return numberOfConnections != ServerConstants.TWO_CONNECTIONS;
     }
 
-    private void waitForSecondPlayer() {
-        while(twoPlayersHaveNotJoined()){
-            System.out.print("");
-        }
-    }
-
-    public void switchTurns() {
-        playerOneTurn = !playerOneTurn;
+    private void doNothing() {
+        System.out.print("");
     }
 
     private void setUpBoard(int player) {
@@ -162,13 +120,15 @@ public class Server implements Runnable {
         ObjectOutputStream clientOutputStream = (player == ServerConstants.PLAYER_TWO) ? outToClientOne : outToClientTwo;
 
         try {
-            Message waitingMessage = player == ServerConstants.PLAYER_ONE
-                    ? new Message(ServerConstants.PLAYER_TWO_WAIT_MESSAGE) : new Message(ServerConstants.PLAYER_ONE_WAIT_MESSAGE);
-            waitingMessage.setIsYourTurn(false);
+            Message waitingMessage = (player == ServerConstants.PLAYER_ONE) ?
+                    new Message(ServerConstants.PLAYER_TWO_WAIT_MESSAGE) : new Message(ServerConstants.PLAYER_ONE_WAIT_MESSAGE);
+            waitingMessage.setIsYourTurn(ServerConstants.IS_NOT_YOUR_TURN);
 
             clientOutputStream.writeObject(waitingMessage);
             clientOutputStream.flush();
-        }catch (Exception e) {}
+        }catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private void addAircraftCarriers(int player) {
@@ -224,19 +184,17 @@ public class Server implements Runnable {
 
         try {
             Message shipPositionMessage = new Message(shipMessage + '\n' + "Enter starting square");
-            shipPositionMessage.setIsYourTurn(true);
+            shipPositionMessage.setIsYourTurn(ServerConstants.IS_YOUR_TURN);
 
-            clientOutputStream.writeObject(shipPositionMessage);
-            clientOutputStream.flush();
+            writeMessageToClient(clientOutputStream, shipPositionMessage);
 
             startingSquare = ((String) clientInputStream.readObject()).trim();
 
             if(!ship.equals(ServerConstants.SUBMARINE)) {
                 shipPositionMessage = new Message("Enter ending square");
-                shipPositionMessage.setIsYourTurn(true);
+                shipPositionMessage.setIsYourTurn(ServerConstants.IS_YOUR_TURN);
 
-                clientOutputStream.writeObject(shipPositionMessage);
-                clientOutputStream.flush();
+                writeMessageToClient(clientOutputStream, shipPositionMessage);
 
                 endingSquare = ((String) clientInputStream.readObject()).trim();
             }
@@ -249,6 +207,15 @@ public class Server implements Runnable {
         }
     }
 
+    private boolean theGameIsNotOver() {
+        return numberOfHitsFromPlayerOne != BattleShipTable.NUMBER_OF_HITS_POSSIBLE &&
+                numberOfHitsFromPlayerTwo != BattleShipTable.NUMBER_OF_HITS_POSSIBLE;
+    }
+
+    public void switchTurns() {
+        itIsPlayerOnesTurn = !itIsPlayerOnesTurn;
+    }
+
     private void makeMove(int player) {
         ObjectOutputStream activeClientOutputStream = getActiveClientOutputStream(player);
         ObjectInputStream activeClientInputStream = getActiveClientInputStream(player);
@@ -256,56 +223,96 @@ public class Server implements Runnable {
         ObjectOutputStream inactiveClientOutputStream = getInactiveClientOutputStream(player);
 
         String squareToBomb = null;
+
+        Message moveMessage = new Message(ServerConstants.MESSAGE_FOR_PLAYER_TURN);
+
+        Message waitMessage = (player == ServerConstants.PLAYER_ONE) ?
+                new Message(ServerConstants.PLAYER_TWO_WAIT_MESSAGE) : new Message(ServerConstants.PLAYER_ONE_WAIT_MESSAGE);
+
+        moveMessage.setIsYourTurn(ServerConstants.IS_YOUR_TURN);
+        waitMessage.setIsYourTurn(ServerConstants.IS_NOT_YOUR_TURN);
+
+        moveMessage.setGameIsStillActive(ServerConstants.ACTIVE);
+        waitMessage.setGameIsStillActive(ServerConstants.ACTIVE);
+
+        writeMessageToClient(activeClientOutputStream, moveMessage);
+        writeMessageToClient(inactiveClientOutputStream, waitMessage);
+
         try {
-            Message moveMessage = new Message(ServerConstants.MESSAGE_FOR_PLAYER_TURN);
-
-            Message waitMessage = (player == ServerConstants.PLAYER_ONE)
-                    ? new Message(ServerConstants.PLAYER_TWO_WAIT_MESSAGE) : new Message(ServerConstants.PLAYER_ONE_WAIT_MESSAGE);
-
-            moveMessage.setIsYourTurn(true);
-            waitMessage.setIsYourTurn(false);
-
-            moveMessage.setGameIsStillActive(true);
-            waitMessage.setGameIsStillActive(true);
-
-            activeClientOutputStream.writeObject(moveMessage);
-            activeClientOutputStream.flush();
-
-            inactiveClientOutputStream.writeObject(waitMessage);
-            inactiveClientOutputStream.flush();
-
             squareToBomb = ((String) activeClientInputStream.readObject()).trim();
-
-            bombBoard(squareToBomb, player);
-
         }catch (Exception e) {
             e.printStackTrace();
         }
+
+        bombBoard(squareToBomb, player);
     }
 
     private void bombBoard(String squareToBomb, int player) {
+        boolean isPTable = true;
+
         if(player == ServerConstants.PLAYER_ONE) {
-            boolean theMoveWasAHit = playerTwoBoard.isHit(squareToBomb, false) && playerOnePTable.isHit(squareToBomb, true);
+            boolean theMoveWasAHit = playerTwoBoard.isHit(squareToBomb, !isPTable) &&
+                                     playerOnePTable.isHit(squareToBomb, isPTable);
 
             String symbolToPutOnBoard = BattleShipTable.MISS_SYMBOL;
 
             if(theMoveWasAHit) {
                 ++numberOfHitsFromPlayerOne;
                 symbolToPutOnBoard = BattleShipTable.HIT_SYMBOL;
+                playerTwoBoard.insertHitToBoard(squareToBomb, symbolToPutOnBoard);
             }
 
             playerOnePTable.insertHit(squareToBomb, symbolToPutOnBoard);
+
         }else {
             String symbolToPutOnBoard = BattleShipTable.MISS_SYMBOL;
-            boolean theMoveWasAHit = playerOneBoard.isHit(squareToBomb, false) && playerTwoPTable.isHit(squareToBomb, true);
+            boolean theMoveWasAHit = playerOneBoard.isHit(squareToBomb, !isPTable) &&
+                                     playerTwoPTable.isHit(squareToBomb, isPTable);
 
             if(theMoveWasAHit) {
                 ++numberOfHitsFromPlayerTwo;
                 symbolToPutOnBoard = BattleShipTable.HIT_SYMBOL;
+                playerOneBoard.insertHitToBoard(squareToBomb, symbolToPutOnBoard);
             }
 
             playerTwoPTable.insertHit(squareToBomb, symbolToPutOnBoard);
         }
+    }
+
+    private void sendBoards(int player) {
+        Message boardInfo = new Message();
+
+        boardInfo.setMsg(numberOfHitsFromPlayerOne + " " +numberOfHitsFromPlayerTwo);
+
+        if (player == ServerConstants.PLAYER_ONE) {
+            boardInfo.Ftable = new BattleShipTable(playerOneBoard.table);
+            boardInfo.Ptable = new BattleShipTable(playerOnePTable.table);
+
+            writeMessageToClient(outToClientOne, boardInfo);
+
+        } else {
+            boardInfo.Ftable = new BattleShipTable(playerTwoBoard.table);
+            boardInfo.Ptable = new BattleShipTable(playerTwoPTable.table);
+
+            writeMessageToClient(outToClientTwo, boardInfo);
+        }
+    }
+
+    private void sendWinningMessage() {
+        Message winningMessage = new Message("Player " + getWinner() + " has emerged victorious");
+
+        winningMessage.setGameIsStillActive(ServerConstants.INACTIVE);
+        winningMessage.setIsYourTurn(ServerConstants.IS_YOUR_TURN);
+
+        writeMessageToClient(outToClientOne, winningMessage);
+        writeMessageToClient(outToClientTwo, winningMessage);
+    }
+
+    private int getWinner() {
+        int winner = (numberOfHitsFromPlayerOne == BattleShipTable.NUMBER_OF_HITS_POSSIBLE) ?
+                ServerConstants.PLAYER_ONE : ServerConstants.PLAYER_TWO;
+
+        return winner;
     }
 
     private ObjectInputStream getActiveClientInputStream(int player) {
@@ -324,5 +331,14 @@ public class Server implements Runnable {
         ObjectOutputStream clientOutputStream = (player != ServerConstants.PLAYER_ONE) ? outToClientOne : outToClientTwo;
 
         return clientOutputStream;
+    }
+
+    private void writeMessageToClient(ObjectOutputStream outToClient, Message outgoingMessage) {
+        try {
+            outToClient.writeObject(outgoingMessage);
+            outToClient.flush();
+        }catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 }

@@ -83,6 +83,7 @@ public class BattleShipTable implements Serializable
 	public void insertHit(String x1, String s){
 		this.insertSinglePoint(this.AlphaNumerictoXY(x1), s);
 	}
+
 	public boolean insertSubmarine(String x1){
 		//check if it can be inserted
 		if(this.insertSinglePoint(this.AlphaNumerictoXY(x1), "S"))
@@ -178,6 +179,12 @@ public class BattleShipTable implements Serializable
 		}
 
 		return !this.table[squareCoordinate[0]][squareCoordinate[1]].equals(DEFAULT_SYMBOL);
+	}
+
+	public void insertHitToBoard(String squareToBomb, String symbolToPutOnBoard) {
+		int[] xy = this.AlphaNumerictoXY(squareToBomb);
+
+		this.table[xy[0]][xy[1]] = symbolToPutOnBoard;
 	}
 	
 	public static void main(String args[]) 

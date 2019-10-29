@@ -16,4 +16,11 @@ public class ServerConstants {
     public static final String PLAYER_ONE_WAIT_MESSAGE = "Waiting for player 2...";
     public static final String PLAYER_TWO_WAIT_MESSAGE = "Waiting for player 1...";
 
+    public static final String SERVED_BOOTED_MESSAGE = "The game is up and running.";
+
+    public static final boolean IS_YOUR_TURN = true;
+    public static final boolean IS_NOT_YOUR_TURN = false;
+    public static final boolean ACTIVE = true;
+    public static final boolean INACTIVE= false;
+
 }
